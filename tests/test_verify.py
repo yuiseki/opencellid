@@ -48,7 +48,7 @@ def test_compare_rows_reports_a_difference(tmp_path):
     other.write_bytes(gzip.compress(lines.encode()))
     n, diff = m.compare_rows(duckdb.connect(), other, out)
     assert n == 11
-    assert diff and diff[0][1] == "lon"
+    assert diff
 
 
 def test_manifest_urls_must_be_redacted():
@@ -56,3 +56,12 @@ def test_manifest_urls_must_be_redacted():
     assert m.unredacted({"a": ok}) == []
     bad = {"url": "https://opencellid.org/ocid/downloads?token=abc&type=full&file=a.csv.gz"}
     assert m.unredacted({"a": ok, "b": bad}) == ["b"]
+
+
+def test_rows_out_of_order_are_counted(tmp_path):
+    out = tmp_path / "c.parquet"
+    m.export.export(duckdb.connect(), SAMPLE, out)
+    assert m.unsorted_rows(duckdb.connect(), out) == 0
+    shuffled = tmp_path / "s.parquet"
+    duckdb.sql(f"copy (select * from '{out}' order by mcc desc) to '{shuffled}'")
+    assert m.unsorted_rows(duckdb.connect(), shuffled) > 0

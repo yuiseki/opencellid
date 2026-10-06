@@ -61,7 +61,7 @@ checked:
     - every raw file against MANIFEST.json (size and sha256); every manifest URL carries token=REDACTED
     - every gzip read to its end; header equal to the documented 14 columns
     - CSV rows counted with the csv module (5,502,843) and equal to the Parquet's
-    - all 77,039,802 cells of the Parquet equal the CSV's, row by row in order
+    - the typed rows of the Parquet equal the CSV's as a multiset (count and a sum of per-row hashes), and the rows are in the export's sort order
     - every geometry equals POINT(lon lat) of its row
     - GeoParquet 1.0.0 metadata, Point, no crs (OGC:CRS84), bbox within -180..180, -90..90
     - a DuckDB without extension autoloading opens it
@@ -72,6 +72,6 @@ modifications:
   parquet:
     - columns typed by name; each value matched against a regular expression before the cast; lon and lat range-checked; a value that does not fit stops the build
     - geometry column added, WKB points from lon and lat, GeoParquet metadata
-    - rows and columns kept in the CSV's order
+    - columns kept in the CSV's order; rows sorted by mcc, net, area, then the other columns (lon and lat through their text, which keeps "-0")
     - written with zstd, without bloom filters
   not_included: the per-MCC files and the daily differential files (listed in MANIFEST.json)

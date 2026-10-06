@@ -96,7 +96,9 @@ An empty cell would be NULL (there is none).
 The geometry column is WKB with GeoParquet 1.0.0 metadata (primary column
 `geometry`, geometry type Point, a bbox). The metadata has no `crs` key,
 which in GeoParquet means OGC:CRS84: WGS 84 longitude/latitude, the same
-datum as EPSG:4326 with x as longitude. Rows are in the order of the CSV.
+datum as EPSG:4326 with x as longitude. Rows are ordered by `mcc`, `net` and `area` (country, network, location
+area), then by the other columns, so a reader that filters on a country or a
+network skips most row groups: Japan (`mcc` 440 and 441) is in 7 of the 45.
 The file opens in DuckDB without the spatial extension, and in GeoPandas,
 GDAL and other GeoParquet readers.
 
@@ -169,6 +171,7 @@ endorsed by OpenCelliD or Unwired Labs. See `LICENSE` and
 The fetch, checks and conversion are in https://github.com/yuiseki/opencellid.
 Before upload, every raw file was checked against its manifest (size,
 sha256, read to the end of the gzip), the CSV rows were counted with
-Python's csv module, and every one of the 77,039,802 cells of the Parquet
-was compared with the CSV, with every geometry checked against its row's
-lon and lat.
+Python's csv module, every row of the Parquet was compared with the CSV's
+rows as typed values (as a multiset, since the Parquet is sorted: the count
+and a sum of per-row hashes must match), the sort order was checked, and
+every geometry was checked against its row's lon and lat.

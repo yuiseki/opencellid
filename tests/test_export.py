@@ -59,10 +59,11 @@ def test_export_writes_typed_geoparquet(tmp_path):
     assert {c: types[c] for c in m.COLUMNS} == {c: m.column_type(c) for c in m.COLUMNS}
     assert types["geometry"].startswith("GEOMETRY")
     rows = rel.fetchall()
-    assert rows[7][:8] == ("NR", 440, 54, 2144781, 23641375123, -1, 132.4243, 34.3772)
+    nr = next(r for r in rows if r[4] == 23641375123)
+    assert nr[:8] == ("NR", 440, 54, 2144781, 23641375123, -1, 132.4243, 34.3772)
     # the point is built from the CSV text: x = lon, y = lat
     want = con.sql("select 'POINT(132.4243 34.3772)'::geometry").fetchone()[0]
-    assert rows[7][-1] == want
+    assert nr[-1] == want
 
 
 def test_export_carries_geoparquet_metadata(tmp_path):
@@ -94,3 +95,20 @@ def test_a_radio_that_is_not_a_word_stops_it(tmp_path):
     bad = _rewrite(tmp_path, lambda ls: [ls[0], "5" + ls[1][3:]] + ls[2:])
     with pytest.raises(duckdb.Error, match="radio is not"):
         m.export(duckdb.connect(), bad, tmp_path / "o.parquet")
+
+
+def test_rows_are_ordered_by_country_network_and_area(tmp_path):
+    out = tmp_path / "cell_towers.parquet"
+    m.export(duckdb.connect(), SAMPLE, out)
+    keys = [tuple(r) for r in _plain().sql(f"select {', '.join(m.ORDER_BY)} from '{out}'").fetchall()]
+    assert keys == sorted(keys)
+    assert m.ORDER_BY[:3] == ["mcc", "net", "area"]
+
+
+def test_a_negative_zero_coordinate_survives_the_sort(tmp_path):
+    # DuckDB returns -0.0 as 0.0 from a DOUBLE column it sorts on directly
+    src = _rewrite(tmp_path, lambda ls: [ls[0], ls[1].replace(ls[1].split(",")[6], "-0", 1)])
+    out = tmp_path / "cell_towers.parquet"
+    m.export(duckdb.connect(), src, out)
+    lon, = _plain().sql(f"select lon from '{out}'").fetchone()
+    assert lon == 0 and str(lon) == "-0.0"

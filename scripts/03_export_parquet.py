@@ -14,11 +14,16 @@ outside -180..180 or lat outside -90..90, stops the run with the column and
 the value. An empty cell would be NULL.
 
 All 14 columns are kept as they are (including the deprecated changeable and
-averageSignal), in the CSV's row order, and a geometry column is added: a
+averageSignal), and a geometry column is added: a
 point built from the lon and lat text of the same row (x = lon, y = lat),
 written as WKB with GeoParquet 1.0 metadata by DuckDB's built-in GEOMETRY
 type. The metadata has no "crs" key, which in GeoParquet means OGC:CRS84,
 that is WGS 84 longitude/latitude (EPSG:4326 with x = longitude).
+
+Rows are ordered by mcc, net and area (country, network, location area),
+then by the remaining columns (ORDER_BY), so a reader that filters on a
+country or a network skips the row groups whose statistics rule it out.
+The full key makes the order the same on every run.
 
     uv run python scripts/03_export_parquet.py
 """
@@ -61,6 +66,11 @@ RANGES = {"lon": (-180, 180), "lat": (-90, 90)}
 COPY = "format parquet, compression zstd, write_bloom_filter false"
 
 
+# country, network and area first, then every other column so the order is total
+ORDER_BY = ["mcc", "net", "area", "cell", "radio", "unit", "lon", "lat", "range", "samples",
+            "created", "updated", "changeable", "averageSignal"]  # fmt: skip
+
+
 def column_type(name: str) -> str:
     return COLUMNS[name]
 
@@ -93,6 +103,14 @@ def _expr(name: str) -> str:
     )
 
 
+def order_key_sql() -> str:
+    """The ORDER BY list. A DOUBLE column used directly as a sort key comes back
+    with -0.0 as 0.0 (DuckDB 1.5.6), and the CSV has "-0" coordinates, so lon
+    and lat are sorted through their text and keep their sign."""
+    return ", ".join(f'"{n}"::varchar' if COLUMNS[n] == "DOUBLE" else f'"{n}"'
+                     for n in ORDER_BY)  # fmt: skip
+
+
 def select_sql(path: Path) -> str:
     src = (
         f"read_csv('{path}', header = true, all_varchar = true, strict_mode = true, "
@@ -100,7 +118,8 @@ def select_sql(path: Path) -> str:
     )
     cols = [f'{_expr(n)} as "{n}"' for n in COLUMNS]
     geom = "('POINT(' || lon || ' ' || lat || ')')::GEOMETRY as geometry"
-    return f"select {', '.join(cols)}, {geom} from {src}"
+    order = order_key_sql()
+    return f"select {', '.join(cols)}, {geom} from {src} order by {order}"
 
 
 def export(con, src: Path, out: Path) -> int:

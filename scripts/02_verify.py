@@ -10,8 +10,11 @@ For each data/raw/<YYYY-MM-DD>/MANIFEST.json:
 Then, for the world export cell_towers.csv.gz, against
 data/parquet/<YYYY-MM-DD>/cell_towers.parquet:
   - the Parquet has as many rows as the CSV read by the csv module
-  - every cell equals the CSV's, row by row in order (text as text, integers
-    and doubles as Python reads them), compared one by one
+  - the rows are the CSV's rows: the export reorders them, so each row is
+    typed (text as text, integers and doubles as Python reads them) and
+    hashed on both sides, and the sum of the hashes must be equal (an
+    order-free fingerprint of the multiset of rows)
+  - the rows are in the export's order (export.order_key_sql())
   - every geometry is the point (lon, lat) of its row
   - the GeoParquet metadata names geometry as the primary column, WKB, Point,
     with no crs (OGC:CRS84) and a bbox inside -180..180, -90..90
@@ -75,32 +78,44 @@ def typed(name: str, raw: str):
     return raw
 
 
+def _fingerprint(row: tuple) -> int:
+    return int.from_bytes(hashlib.blake2b(repr(row).encode(), digest_size=8).digest(), "big")
+
+
 def compare_rows(con, src: Path, pq: Path, limit: int = 5) -> tuple[int, list]:
-    """(rows compared, first differences as (row, column, csv, parquet))."""
+    """(rows of the CSV, differences): the typed rows on both sides as a multiset.
+
+    The export sorts the rows, so they are compared without their order: each
+    row's typed values are hashed, and the count and the sum of the hashes
+    (mod 2**64) must be equal. A difference cannot be located this way; it
+    is reported as the two counts and sums.
+    """
     names = list(export.COLUMNS)
-    cols = ", ".join(f'"{n}"' for n in names)
-    cur = con.execute(f"select {cols} from '{pq}'")
-    diff, n = [], 0
+    n = total = 0
     with _reader(src) as r:
         next(r)
-        batch = cur.fetchmany(100_000)
-        i = 0
         for row in r:
-            if i == len(batch):
-                batch, i = cur.fetchmany(100_000), 0
-                if not batch:
-                    diff.append((n, "<row>", ",".join(row), None))
-                    break
-            got = batch[i]
-            i += 1
             n += 1
-            if len(diff) < limit:
-                for c, raw, g in zip(names, row, got, strict=True):
-                    if typed(c, raw) != g:
-                        diff.append((n, c, raw, g))
-        if i < len(batch) or cur.fetchmany(1):
-            diff.append((n, "<row>", None, "the Parquet has more rows"))
-    return n, diff
+            total += _fingerprint(tuple(typed(c, v) for c, v in zip(names, row, strict=True)))
+    cols = ", ".join(f'"{c}"' for c in names)
+    cur = con.execute(f"select {cols} from '{pq}'")
+    m = got = 0
+    while batch := cur.fetchmany(100_000):
+        m += len(batch)
+        got += sum(_fingerprint(tuple(b)) for b in batch)
+    mask = (1 << 64) - 1
+    if (n, total & mask) != (m, got & mask):
+        return n, [("<rows>", "count and fingerprint", (n, total & mask), (m, got & mask))]
+    return n, []
+
+
+def unsorted_rows(con, pq: Path) -> int:
+    """Rows whose ORDER_BY key is smaller than the key of the row before them."""
+    key = export.order_key_sql()
+    return con.sql(
+        f"select count(*) from (select ({key}) as k, lag(({key})) over (order by file_row_number) "
+        f"as p from read_parquet('{pq}', file_row_number = true)) where k < p"
+    ).fetchone()[0]
 
 
 def unredacted(files: dict) -> list[str]:
@@ -128,8 +143,12 @@ def verify_parquet(d: Path, csv_rows: int) -> int:
     compared, diff = compare_rows(con, d / export.SOURCE, pq)
     check(
         not diff and compared == csv_rows,
-        f"{pq.name}: all {compared * len(export.COLUMNS):,} cells equal the CSV ({diff or 'none differ'})",
+        f"{pq.name}: the {compared:,} typed rows equal the CSV's as a multiset "
+        f"({diff or 'count and fingerprint match'})",
     )
+    out_of_order = unsorted_rows(con, pq)
+    check(out_of_order == 0,
+          f"{pq.name}: rows in {', '.join(export.ORDER_BY[:3])}, ... order ({out_of_order:,} out of order)")  # fmt: skip
     bad = con.sql(
         f"select count(*) from '{pq}' where geometry is distinct from "
         "('POINT(' || cast(lon as varchar) || ' ' || cast(lat as varchar) || ')')::GEOMETRY"
