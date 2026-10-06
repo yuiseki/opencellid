@@ -1,0 +1,77 @@
+# Where this data comes from and what was done to it.
+
+source:
+  name: OpenCelliD cell export (world)
+  publisher: OpenCelliD, run by Unwired Labs; data from OpenCelliD contributors
+  homepage: https://opencellid.org
+  downloads: https://opencellid.org/downloads.php
+  download_url_form: https://opencellid.org/ocid/downloads?token=<API access token>&type=<full|mcc|diff>&file=<file>
+  format: https://docs.opencellid.org/docs/downloads/database-format
+  access: |
+    The download page shows its links only after an API access token is
+    posted to it. The links have the form above; type=full is the world
+    file cell_towers.csv.gz. Tokens are never stored here.
+  update: |
+    "We generate exports daily by 02:00 GMT. They include towers observed
+    in the last 18 months. You can download each file twice per day from
+    our download page." (https://docs.opencellid.org/docs/getting-started/access-and-limits,
+    read 2026-10-06)
+  licence:
+    applied: CC BY-SA 4.0 (https://docs.opencellid.org/docs/attribution, read 2026-10-06)
+    legal_code: https://creativecommons.org/licenses/by-sa/4.0/legalcode
+    card: "license: cc-by-sa-4.0"
+    statement: "OpenCellID data is licensed under CC BY-SA 4.0, including API results, dataset downloads and daily changes."
+    credit: "Cell tower data from OpenCellID (https://opencellid.org), licensed under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)."
+    attribution_required: true
+    indicate_changes: true
+    share_alike: true
+    exceptions: only in writing by Unwired Labs
+
+snapshots:
+  "2026-10-06":
+    page_states: "Updated: 2026-10-06"
+    fetched: 2026-10-06T06:12:19Z
+    files:
+      cell_towers.csv.gz:
+        url: https://opencellid.org/ocid/downloads?token=REDACTED&type=full&file=cell_towers.csv.gz
+        bytes: 119529026
+        sha256: 6ce8d77f1b421aa76ff9aafb7887043e4bbebbc6bdab5edcdf8a3d6cabd48c89
+        last_modified: "Tue, 06 Oct 2026 00:16:33 GMT"
+        rows: 5502843
+        columns: 14
+    listed_not_fetched:
+      mcc_files: 179
+      mcc_files_stated_kb: 110543
+      daily_files: 7 (OCID-diff-cell-export-2026-09-30 to 2026-10-06, 13523 KB in all)
+      no_recent_data_mccs: [374, 539, 540, 541, 546, 548, 549, 551, 607, 618, 619, 638, 657, 738]
+    subsets:
+      "2026-10-06": {file: parquet/2026-10-06/cell_towers.parquet, rows: 5502843, columns: 15}
+    counts:
+      radio: {LTE: 3652892, GSM: 994931, UMTS: 595010, NR: 260005, CDMA: 5}
+      mccs: 199
+      mcc_440: 740404
+      mcc_441: 120
+      updated: 2025-04-06 to 2026-10-05
+      created_from: 2008-04-05
+      duplicate_radio_mcc_net_area_cell: 0
+
+checked:
+  note: scripts/02_verify.py, with Python's csv module and DuckDB, before upload
+  items:
+    - every raw file against MANIFEST.json (size and sha256); every manifest URL carries token=REDACTED
+    - every gzip read to its end; header equal to the documented 14 columns
+    - CSV rows counted with the csv module (5,502,843) and equal to the Parquet's
+    - all 77,039,802 cells of the Parquet equal the CSV's, row by row in order
+    - every geometry equals POINT(lon lat) of its row
+    - GeoParquet 1.0.0 metadata, Point, no crs (OGC:CRS84), bbox within -180..180, -90..90
+    - a DuckDB without extension autoloading opens it
+    - no bloom filters
+
+modifications:
+  raw: none. OpenCelliD's file, byte for byte.
+  parquet:
+    - columns typed by name; each value matched against a regular expression before the cast; lon and lat range-checked; a value that does not fit stops the build
+    - geometry column added, WKB points from lon and lat, GeoParquet metadata
+    - rows and columns kept in the CSV's order
+    - written with zstd, without bloom filters
+  not_included: the per-MCC files and the daily differential files (listed in MANIFEST.json)

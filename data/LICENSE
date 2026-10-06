@@ -1,0 +1,39 @@
+Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+https://creativecommons.org/licenses/by-sa/4.0/legalcode
+
+Everything under this directory comes from OpenCelliD (https://opencellid.org),
+run by Unwired Labs, and its contributors.
+
+OpenCelliD's attribution page (https://docs.opencellid.org/docs/attribution,
+read on 2026-10-06) says: "OpenCellID data is licensed under CC BY-SA 4.0,
+including API results, dataset downloads and daily changes." It asks to
+"credit OpenCelliD, link to the source and license, and indicate any
+changes", and gives this credit for print or plain text:
+
+  Cell tower data from OpenCellID (https://opencellid.org),
+  licensed under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/).
+
+When sharing adapted material, follow the licence's ShareAlike terms,
+retain the supplied copyright, licence and warranty notices, and do not
+restrict recipients' licensed rights. Exceptions to the attribution
+requirement are granted only in writing by Unwired Labs.
+
+This dataset is not made or endorsed by OpenCelliD or Unwired Labs.
+
+The files under raw/<date>/ are OpenCelliD's own, byte for byte; each
+snapshot's MANIFEST.json records their URLs (without the access token),
+sizes, sha256 and Last-Modified.
+
+Changes: the GeoParquet under parquet/<date>/ was made from
+raw/<date>/cell_towers.csv.gz:
+
+  - columns typed by name (radio as text; cell, created and updated as
+    64-bit integers; lon and lat as floating-point numbers; the others as
+    32-bit integers)
+  - a geometry column added: the point (lon, lat) of each row, WKB with
+    GeoParquet metadata (OGC:CRS84)
+  - all 14 columns and every row kept in the CSV's order
+  - no value was changed
+
+The code that fetches, checks and converts is in the repository this
+dataset was built from (MIT) and does not apply here.
